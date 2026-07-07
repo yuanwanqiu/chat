@@ -398,6 +398,16 @@ const loadData = async () => {
         if (savedAnniversaries) anniversaries = savedAnniversaries;
         if (savedStickers) stickerLibrary = savedStickers;
         if (savedMyStickers) myStickerLibrary = savedMyStickers;
+        
+        if (stickerLibrary && stickerLibrary.length > 0) {
+            const existingUrls = new Set(myStickerLibrary);
+            const migrated = stickerLibrary.filter(url => !existingUrls.has(url));
+            if (migrated.length > 0) {
+                myStickerLibrary = [...myStickerLibrary, ...migrated];
+                console.log(`[migration] 迁移了 ${migrated.length} 个旧表情包到 myStickerLibrary`);
+            }
+            stickerLibrary = [];
+        }
         if (savedCustomThemes) customThemes = savedCustomThemes;
         if (savedThemeSchemes) themeSchemes = savedThemeSchemes;
         try { const ce = await localforage.getItem(getStorageKey('customEmojis')); if (ce && Array.isArray(ce)) customEmojis = ce; } catch(e) {}
@@ -575,7 +585,6 @@ const saveData = async () => {
         { key: 'customStatuses',         val: () => localforage.setItem(getStorageKey('customStatuses'), customStatuses) },
         { key: 'customMottos',           val: () => localforage.setItem(getStorageKey('customMottos'), customMottos) },
         { key: 'customIntros',           val: () => localforage.setItem(getStorageKey('customIntros'), customIntros) },
-        { key: 'stickerLibrary',         val: () => localforage.setItem(getStorageKey('stickerLibrary'), stickerLibrary) },
         { key: 'myStickerLibrary',       val: () => localforage.setItem(getStorageKey('myStickerLibrary'), myStickerLibrary) },
         { key: 'customThemes',           val: () => localforage.setItem(`${APP_PREFIX}customThemes`, customThemes) },
         { key: 'themeSchemes',           val: () => localforage.setItem(`${APP_PREFIX}themeSchemes`, themeSchemes) },

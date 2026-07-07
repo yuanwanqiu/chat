@@ -145,7 +145,7 @@ function _renderListContentOnly() {
             itemsToRender = CONSTANTS.REPLY_EMOJIS;
             renderType = 'emoji';
         } else if (currentSubTab === 'stickers') {
-            itemsToRender = stickerLibrary;
+            itemsToRender = myStickerLibrary;
             renderType = 'image';
         }
     } else if (currentMajorTab === 'atmosphere') {
@@ -233,7 +233,7 @@ function renderReplyLibrary() {
             itemsToRender = CONSTANTS.REPLY_EMOJIS;
             renderType = 'emoji';
         } else if (currentSubTab === 'stickers') {
-            itemsToRender = stickerLibrary;
+            itemsToRender = myStickerLibrary;
             renderType = 'image';
         }
     } else if (currentMajorTab === 'atmosphere') {
@@ -278,7 +278,7 @@ function _renderModernToolbar() {
 
     const disabledSet = _getDisabledItemsSet();
     const ctx = _getGroupCtx();
-    const totalItems = isMainCustom ? customReplies.length : (isStickersTab ? stickerLibrary.length : 0);
+    const totalItems = isMainCustom ? customReplies.length : (isStickersTab ? myStickerLibrary.length : 0);
     const selectedCount = _batchSelectedIndices.size;
 
     const addBtnLabel = (() => {
@@ -498,7 +498,7 @@ function _renderModernToolbar() {
         toolbar.querySelector('#batch-select-all-btn')?.addEventListener('click', () => {
             if (_batchSelectedIndices.size === totalItems) _batchSelectedIndices.clear();
             else {
-                const pool = isMainCustom ? customReplies : stickerLibrary;
+                const pool = isMainCustom ? customReplies : myStickerLibrary;
                 pool.forEach((_, i) => _batchSelectedIndices.add(i));
             }
             renderReplyLibrary();
@@ -518,8 +518,8 @@ function _renderModernToolbar() {
             if (!confirm(`确定删除选中的 ${_batchSelectedIndices.size} 条？`)) return;
             const indices = [..._batchSelectedIndices].sort((a, b) => b - a);
             if (isStickersTab) {
-                const deleted = indices.map(i => stickerLibrary[i]).filter(Boolean);
-                indices.forEach(i => stickerLibrary.splice(i, 1));
+                const deleted = indices.map(i => myStickerLibrary[i]).filter(Boolean);
+                indices.forEach(i => myStickerLibrary.splice(i, 1));
                 // 同步清理已删除条目的“屏蔽集合”
                 const dis = _getDisabledStickerItemsSet();
                 deleted.forEach(d => dis.delete(d));
@@ -883,7 +883,7 @@ function _renderStickerTab(list, itemsToRender) {
                     disabledSet.delete(item);
                     _saveDisabledStickerItemsSet(disabledSet);
                 }
-                stickerLibrary.splice(index, 1);
+                myStickerLibrary.splice(index, 1);
                 _batchSelectedIndices.clear();
                 throttledSaveData();
                 renderReplyLibrary();
@@ -940,7 +940,7 @@ function _batchToggleDisable() {
 
 function _batchToggleDisableStickers() {
     const set = _getDisabledStickerItemsSet();
-    const selectedItems = [..._batchSelectedIndices].map(i => stickerLibrary[i]).filter(Boolean);
+    const selectedItems = [..._batchSelectedIndices].map(i => myStickerLibrary[i]).filter(Boolean);
     if (selectedItems.length === 0) return;
     const allDisabled = selectedItems.every(item => set.has(item));
     if (allDisabled) {
@@ -1496,10 +1496,10 @@ function _showExportUI() {
 
         panel.querySelector('#_exp_all_btn').onclick = () => {
             overlay.remove();
-            _showIOSheet('导出字卡', '选择要导出的模块', modules, ICONS.export, (selected) => {
+            _showIOSheet('导出字卡', '选择要导出的模块', modules, ICONS.export, (selected, mode) => {
                 if (!selected.length) { showNotification('请至少选择一项', 'error'); return; }
-                _doExport(selected);
-            });
+                _doExport(selected, mode);
+            }, true);
         };
 
         const groupBtn = panel.querySelector('#_exp_group_btn');
@@ -1522,7 +1522,35 @@ function _showExportUI() {
     });
 }
 
-function _doExport(selectedModules) {
+function _doExport(selectedModules, format = 'json') {
+    const isTxt = format === 'txt';
+    const textModules = ['customReplies', 'customPokes', 'customStatuses', 'customMottos', 'customIntros', 'customEmojis'];
+    
+    if (isTxt) {
+        const textOnlyModules = selectedModules.filter(m => textModules.includes(m.key));
+        if (textOnlyModules.length === 0) {
+            showNotification('TXT 格式只支持纯文本内容（字卡、拍一拍、状态等）', 'warning');
+            return;
+        }
+        
+        let txtContent = '';
+        textOnlyModules.forEach(m => {
+            if (m.key === 'customReplies')         { txtContent += customReplies.join('\n') + '\n'; }
+            else if (m.key === 'customPokes')      { txtContent += customPokes.join('\n') + '\n'; }
+            else if (m.key === 'customStatuses')   { txtContent += customStatuses.join('\n') + '\n'; }
+            else if (m.key === 'customMottos')     { txtContent += customMottos.join('\n') + '\n'; }
+            else if (m.key === 'customIntros')     { txtContent += customIntros.join('\n') + '\n'; }
+            else if (m.key === 'customEmojis')     { txtContent += customEmojis.join('\n') + '\n'; }
+        });
+        txtContent = txtContent.trim();
+        
+        const fileName = `reply-library-${new Date().toISOString().slice(0,10)}.txt`;
+        const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+        downloadFileFallback(blob, fileName);
+        showNotification('✓ TXT 字卡导出成功', 'success');
+        return;
+    }
+    
     const libraryData = { exportDate: new Date().toISOString(), modules: [] };
     selectedModules.forEach(m => {
         if (m.key === 'customReplies')         { libraryData.customReplies      = customReplies;                  libraryData.modules.push('replies'); }
@@ -1868,7 +1896,7 @@ function _showImportUI(data) {
     }, true);
 }
 
-function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = false) {
+function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = false, showFormat = false) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn 0.2s ease;';
 
@@ -1878,6 +1906,7 @@ function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = fals
         <style>
             @keyframes fadeIn { from{opacity:0} to{opacity:1} }
             @keyframes slideUpSheet { from{transform:translateY(100%)} to{transform:translateY(0)} }
+            @keyframes fadeOut { from{opacity:1} to{opacity:0} }
             .io-module-row {
                 display:flex;align-items:center;gap:12px;cursor:pointer;
                 padding:12px 14px;border-radius:14px;background:var(--primary-bg);
@@ -1948,6 +1977,21 @@ function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = fals
                     </div>
                 </div>
             </div>` : ''}
+            ${showFormat ? `
+            <div style="padding:8px 22px;flex-shrink:0;">
+                <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-radius:13px;background:var(--primary-bg);border:1.5px solid var(--border-color);">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:var(--accent-color);flex-shrink:0;"><path d="M2 2h11v11H2z" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                    <span style="font-size:13px;color:var(--text-primary);flex:1;">导出格式</span>
+                    <div style="display:flex;background:var(--secondary-bg);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);">
+                        <label style="display:flex;align-items:center;gap:4px;padding:5px 12px;cursor:pointer;font-size:12px;color:var(--text-primary);">
+                            <input type="radio" name="_io_format" id="_io_json" value="json" checked style="accent-color:var(--accent-color);"> JSON
+                        </label>
+                        <label style="display:flex;align-items:center;gap:4px;padding:5px 12px;cursor:pointer;font-size:12px;color:var(--text-primary);border-left:1px solid var(--border-color);">
+                            <input type="radio" name="_io_format" id="_io_txt" value="txt" style="accent-color:var(--accent-color);"> TXT
+                        </label>
+                    </div>
+                </div>
+            </div>` : ''}
             <div style="padding:10px 22px 22px;display:flex;gap:10px;flex-shrink:0;">
                 <button id="_io_cancel" style="flex:1;padding:13px;border:1.5px solid var(--border-color);border-radius:14px;background:none;color:var(--text-secondary);font-size:13px;cursor:pointer;font-family:var(--font-family);">取消</button>
                 <button id="_io_confirm" style="flex:2;padding:13px;border:none;border-radius:14px;background:var(--accent-color);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-family);display:flex;align-items:center;justify-content:center;gap:8px;">
@@ -1974,8 +2018,9 @@ function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = fals
     overlay.querySelector('#_io_confirm').onclick = () => {
         const selected = modules.filter(m => document.getElementById(m.id)?.checked);
         const mode = showMode ? (document.getElementById('_io_overwrite')?.checked ? 'overwrite' : 'merge') : 'export';
+        const format = showFormat ? (document.getElementById('_io_txt')?.checked ? 'txt' : 'json') : 'json';
         close();
-        onConfirm(selected, mode);
+        onConfirm(selected, format);
     };
 }
 
@@ -2269,11 +2314,17 @@ function initReplyLibraryListeners() {
             const reader = new FileReader();
             reader.onload = ev => {
                 let data;
-                try {
-                    data = _parseFlexibleJSON(ev.target.result);
-                } catch {
-                    showNotification('文件解析失败，请检查文件格式', 'error');
-                    return;
+                const isTxt = file.name.toLowerCase().endsWith('.txt');
+                if (isTxt) {
+                    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+                    data = { customReplies: lines };
+                } else {
+                    try {
+                        data = _parseFlexibleJSON(ev.target.result);
+                    } catch {
+                        showNotification('文件解析失败，请检查文件格式', 'error');
+                        return;
+                    }
                 }
                 data = _normalizeImportData(data);
                 _showImportUI(data);
